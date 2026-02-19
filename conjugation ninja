@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Ninja Runner: Full Screen Edition</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Shojumaru&family=Open+Sans:wght@400;700&display=swap');
+
+        :root {
+            --stage-bg: #0f172a;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: var(--stage-bg);
+            font-family: 'Open Sans', sans-serif;
+        }
+
+        .ninja-font { font-family: 'Shojumaru', cursive; }
+
+        /* Full Screen Container */
+        #game-container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        /* Responsive Stage */
+        #stage {
+            flex: 1; /* Takes up all available space above the UI */
+            position: relative;
+            background: linear-gradient(to bottom, #1e1b4b, #0f172a);
+            overflow: hidden;
+            border-bottom: 4px solid #312e81;
+        }
+
+        .level-platform {
+            position: absolute;
+            height: 15px;
+            border-top: 3px solid #ffd700;
+            transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            z-index: 10;
+        }
+
+        #ninja {
+            position: absolute;
+            font-size: 3rem;
+            transition: left 0.5s linear, bottom 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+            z-index: 50;
+            filter: drop-shadow(0 0 8px rgba(255,0,0,0.8));
+            transform-origin: bottom center;
+        }
+
+        .shuriken {
+            position: absolute;
+            font-size: 1.8rem;
+            animation: spin 0.6s linear infinite;
+            z-index: 40;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        /* UI Panel at the bottom */
+        #ui-panel {
+            background: #1e293b;
+            padding: 1rem;
+            border-top: 4px solid #ef4444;
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1rem;
+            z-index: 100;
+        }
+
+        @media (min-width: 768px) {
+            #ui-panel {
+                grid-template-columns: 1.5fr 2fr 1.5fr;
+                padding: 1.5rem 3rem;
+            }
+        }
+
+        .shake {
+            animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
+        }
+
+        @keyframes shake {
+            10%, 90% { transform: translate3d(-1px, 0, 0); }
+            20%, 80% { transform: translate3d(2px, 0, 0); }
+            30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+            40%, 60% { transform: translate3d(4px, 0, 0); }
+        }
+
+        .jumping {
+            animation: jump-arc 0.6s ease-in-out;
+        }
+
+        @keyframes jump-arc {
+            0% { transform: scaleY(1); }
+            30% { transform: scaleY(0.8) translateY(-20px); }
+            100% { transform: scaleY(1); }
+        }
+
+        /* Custom Input Styling */
+        #answer-input::placeholder {
+            color: #475569;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <!-- Dynamic Header (Overlays on stage) -->
+        <div class="absolute top-0 left-0 w-full p-4 z-[110] flex justify-between items-start pointer-events-none">
+            <div class="pointer-events-auto">
+                <h1 class="ninja-font text-xl md:text-3xl text-red-600 drop-shadow-lg">Ninja Runner</h1>
+                <p class="text-[10px] md:text-xs text-gray-400 uppercase tracking-tighter">Conjugation Master</p>
+            </div>
+            <div class="flex flex-col gap-2 pointer-events-auto">
+                <div class="bg-black/60 border border-yellow-500 px-3 py-1 rounded-full text-xs md:text-sm text-center">
+                    ⚡ <span id="energy-val" class="text-yellow-400 font-bold">0</span> ENERGY
+                </div>
+                <div class="bg-black/60 border border-red-500 px-3 py-1 rounded-full text-xs md:text-sm text-center">
+                    <span id="level-name" class="text-red-400 font-bold uppercase tracking-widest">Basic</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- The Action Stage -->
+        <div id="stage">
+            <div id="ninja" style="bottom: 0px; left: 10%;">🥷</div>
+            <div id="platforms-container"></div>
+            <div id="shuriken-container"></div>
+        </div>
+
+        <!-- Control Panel -->
+        <div id="ui-panel">
+            <div class="flex flex-col justify-center items-center md:items-start">
+                <span class="text-gray-500 text-[10px] font-bold uppercase mb-1">Current Challenge</span>
+                <div class="text-2xl md:text-4xl font-black text-yellow-400 tracking-tighter" id="verb-display">HABLAR</div>
+                <div class="text-sm md:text-lg text-blue-300 font-semibold" id="subject-display">Tú y tus amigos</div>
+            </div>
+
+            <div class="relative flex flex-col justify-center">
+                <input type="text" id="answer-input" autocomplete="off" spellcheck="false"
+                    class="w-full bg-slate-950 border-2 border-slate-700 rounded-xl p-4 text-2xl text-center focus:border-red-500 focus:ring-2 focus:ring-red-900/50 outline-none transition-all text-white"
+                    placeholder="Type conjugation...">
+                <div id="feedback" class="absolute -top-4 left-0 right-0 text-center text-[10px] font-bold uppercase transition-all"></div>
+            </div>
+
+            <div class="flex gap-3 items-center">
+                <button id="submit-btn" class="flex-1 bg-red-700 hover:bg-red-600 py-4 rounded-xl font-bold shadow-lg transition-all active:scale-95 text-sm md:text-base">
+                    STRIKE!
+                </button>
+                <button id="jump-btn" class="flex-1 bg-indigo-700 hover:bg-indigo-600 py-4 rounded-xl font-bold shadow-lg opacity-40 cursor-not-allowed transition-all text-sm md:text-base" disabled>
+                    JUMP (20⚡)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Win Screen -->
+    <div id="win-overlay" class="fixed inset-0 bg-slate-950/95 z-[200] hidden flex flex-col items-center justify-center text-center p-8">
+        <div class="ninja-font text-6xl md:text-8xl text-yellow-500 mb-4 animate-bounce">SHOGUN</div>
+        <h2 class="text-2xl md:text-4xl font-bold mb-4">GOLD STANDARD REACHED!</h2>
+        <p class="text-lg md:text-xl mb-8 text-slate-400 max-w-md">Your mastery of the present tense is absolute. The empire is safe.</p>
+        <button onclick="location.reload()" class="bg-red-600 px-12 py-4 rounded-full font-bold text-xl hover:bg-red-500 transition-all shadow-[0_0_20px_rgba(220,38,38,0.5)]">RESTART TRAINING</button>
+    </div>
+
+    <script>
+        const levels = [
+            { name: "Basic", color: "#334155" },
+            { name: "Beginner", color: "#1e293b" },
+            { name: "Intermediate", color: "#1e3a8a" },
+            { name: "Almost There", color: "#312e81" },
+            { name: "Proficient", color: "#4c1d95" },
+            { name: "Advanced", color: "#701a75" },
+            { name: "Gold Standard", color: "#854d0e" }
+        ];
+
+        const verbs = [
+            { span: "hablar", type: "ar" }, { span: "cantar", type: "ar" }, { span: "bailar", type: "ar" },
+            { span: "estudiar", type: "ar" }, { span: "trabajar", type: "ar" }, { span: "caminar", type: "ar" },
+            { span: "comer", type: "er" }, { span: "beber", type: "er" }, { span: "leer", type: "er" },
+            { span: "correr", type: "er" }, { span: "aprender", type: "er" }, { span: "creer", type: "er" },
+            { span: "vivir", type: "ir" }, { span: "escribir", type: "ir" }, { span: "abrir", type: "ir" },
+            { span: "subir", type: "ir" }, { span: "decidir", type: "ir" }, { span: "asistir", type: "ir" }
+        ];
+
+        const subjects = [
+            { eng: "I (Yo)", person: "1s" },
+            { eng: "You (Tú)", person: "2s" },
+            { eng: "He (Él)", person: "3s" },
+            { eng: "The horse (El caballo)", person: "3s" },
+            { eng: "My cat (Mi gato)", person: "3s" },
+            { eng: "The book (El libro)", person: "3s" },
+            { eng: "We (Nosotros)", person: "1p" },
+            { eng: "My cat and I (Mi gato y yo)", person: "1p" },
+            { eng: "You and I (Usted y yo)", person: "1p" },
+            { eng: "They (Ellos)", person: "3p" },
+            { eng: "The books (Los libros)", person: "3p" },
+            { eng: "My cousins (Mis primos)", person: "3p" },
+            { eng: "You and your friends (Usted y sus amigos)", person: "3p" },
+            { eng: "You and he (Usted y él)", person: "3p" },
+            { eng: "My brother and you (Mi hermano y tú)", person: "3p" },
+            { eng: "Your friends (Tus amigos)", person: "3p" }
+        ];
+
+        let energy = 0;
+        let currentLevelIndex = 0;
+        let currentQuestion = null;
+        let isTransitioning = false;
+
+        const ninja = document.getElementById('ninja');
+        const stage = document.getElementById('stage');
+        const platformsContainer = document.getElementById('platforms-container');
+        const shurikenContainer = document.getElementById('shuriken-container');
+
+        function initPlatforms() {
+            platformsContainer.innerHTML = '';
+            const stageHeight = stage.offsetHeight;
+            const spacing = stageHeight / (levels.length + 1);
+
+            levels.forEach((lvl, idx) => {
+                const p = document.createElement('div');
+                p.className = 'level-platform';
+                p.id = `platform-${idx}`;
+                const bottomPos = spacing * idx;
+                p.style.bottom = `${bottomPos}px`;
+                p.style.left = '5%';
+                p.style.width = '90%';
+                p.style.backgroundColor = lvl.color;
+                p.innerHTML = `<span class="bg-black/30 px-3 rounded-full border border-white/10">${lvl.name}</span>`;
+                platformsContainer.appendChild(p);
+                levels[idx].y = bottomPos; // Store calculated Y
+            });
+        }
+
+        function updateEnergyUI() {
+            document.getElementById('energy-val').innerText = energy;
+            const jumpBtn = document.getElementById('jump-btn');
+            if (energy >= 20 && currentLevelIndex < levels.length - 1 && !isTransitioning) {
+                jumpBtn.classList.remove('opacity-40', 'cursor-not-allowed', 'bg-indigo-700');
+                jumpBtn.classList.add('bg-blue-500', 'animate-pulse');
+                jumpBtn.disabled = false;
+            } else {
+                jumpBtn.classList.add('opacity-40', 'cursor-not-allowed', 'bg-indigo-700');
+                jumpBtn.classList.remove('bg-blue-500', 'animate-pulse');
+                jumpBtn.disabled = true;
+            }
+        }
+
+        function spawnShuriken() {
+            if (currentLevelIndex === 0 || isTransitioning) return;
+            const s = document.createElement('div');
+            s.className = 'shuriken';
+            s.innerText = '⚙️';
+            // Shuriken flies at ninja height on current platform
+            s.style.bottom = `${levels[currentLevelIndex].y + 30}px`;
+            s.style.left = '110%';
+            shurikenContainer.appendChild(s);
+
+            let pos = 110;
+            const speed = 1.5 + (currentLevelIndex * 0.2); // Faster at higher levels
+            
+            const interval = setInterval(() => {
+                pos -= speed;
+                s.style.left = pos + '%';
+                
+                // Better collision detection
+                if (pos > 8 && pos < 15 && !isTransitioning) {
+                    loseLevel();
+                    clearInterval(interval);
+                    s.remove();
+                }
+
+                if (pos < -20) {
+                    clearInterval(interval);
+                    s.remove();
+                }
+            }, 20);
+        }
+
+        function loseLevel() {
+            if (currentLevelIndex > 0) {
+                currentLevelIndex--;
+                showFeedback("HIT! FALLING BACK!", "text-red-500");
+                animateMovement();
+                stage.classList.add('shake');
+                setTimeout(() => stage.classList.remove('shake'), 500);
+            }
+        }
+
+        function getConjugation(verb, person) {
+            const stem = verb.span.slice(0, -2);
+            const ending = verb.span.slice(-2);
+            const patterns = {
+                "ar": { "1s": "o", "2s": "as", "3s": "a", "1p": "amos", "3p": "an" },
+                "er": { "1s": "o", "2s": "es", "3s": "e", "1p": "emos", "3p": "en" },
+                "ir": { "1s": "o", "2s": "es", "3s": "e", "1p": "imos", "3p": "en" }
+            };
+            return stem + patterns[ending][person];
+        }
+
+        function nextQuestion() {
+            const randomVerb = verbs[Math.floor(Math.random() * verbs.length)];
+            const randomSub = subjects[Math.floor(Math.random() * subjects.length)];
+            currentQuestion = {
+                verb: randomVerb.span,
+                subject: randomSub.eng,
+                answer: getConjugation(randomVerb, randomSub.person)
+            };
+            document.getElementById('verb-display').innerText = currentQuestion.verb.toUpperCase();
+            document.getElementById('subject-display').innerText = currentQuestion.subject;
+            const input = document.getElementById('answer-input');
+            input.value = "";
+            input.focus();
+        }
+
+        function showFeedback(text, colorClass) {
+            const f = document.getElementById('feedback');
+            f.innerText = text;
+            f.className = `absolute -top-6 left-0 right-0 text-center text-sm font-bold uppercase transition-all ${colorClass}`;
+            setTimeout(() => f.innerText = "", 2000);
+        }
+
+        function handleStrike() {
+            const input = document.getElementById('answer-input').value.trim().toLowerCase();
+            if (!input) return;
+
+            if (input === currentQuestion.answer) {
+                energy += 10;
+                showFeedback("PERFECT STRIKE! +10⚡", "text-green-400");
+                updateEnergyUI();
+                nextQuestion();
+            } else {
+                showFeedback(`MISSED! Correct: ${currentQuestion.answer}`, "text-red-500");
+                stage.classList.add('shake');
+                setTimeout(() => stage.classList.remove('shake'), 500);
+                if (currentLevelIndex > 0) {
+                    currentLevelIndex--;
+                    animateMovement();
+                }
+                nextQuestion();
+            }
+        }
+
+        function handleJump() {
+            if (energy < 20 || isTransitioning) return;
+            
+            energy -= 20;
+            currentLevelIndex++;
+            isTransitioning = true;
+            updateEnergyUI();
+
+            ninja.classList.add('jumping');
+            animateMovement();
+
+            setTimeout(() => {
+                ninja.classList.remove('jumping');
+                isTransitioning = false;
+                if (currentLevelIndex === levels.length - 1) {
+                    document.getElementById('win-overlay').classList.remove('hidden');
+                }
+            }, 600);
+        }
+
+        function animateMovement() {
+            const targetY = levels[currentLevelIndex].y;
+            // Place ninja slightly above the platform surface
+            ninja.style.bottom = `${targetY + 15}px`;
+            document.getElementById('level-name').innerText = levels[currentLevelIndex].name;
+            updateEnergyUI();
+        }
+
+        // Shuriken Spawner Loop
+        setInterval(() => {
+            if (!isTransitioning && currentLevelIndex > 0) {
+                spawnShuriken();
+            }
+        }, 4000);
+
+        // Window Resize Handling for Platforms
+        window.onresize = () => {
+            initPlatforms();
+            animateMovement();
+        };
+
+        document.getElementById('submit-btn').onclick = handleStrike;
+        document.getElementById('jump-btn').onclick = handleJump;
+        document.getElementById('answer-input').onkeydown = (e) => { 
+            if(e.key === 'Enter') handleStrike(); 
+        };
+
+        window.onload = () => {
+            initPlatforms();
+            animateMovement();
+            nextQuestion();
+        };
+    </script>
+</body>
+</html>
